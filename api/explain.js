@@ -1,18 +1,23 @@
-const express = require('express');
-const cors = require('cors');
 require('dotenv').config();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const app = express();
-const port = 5001;
-
-app.use(cors());
-app.use(express.json());
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-app.post('/explain', async (req, res) => {
+module.exports = async (req, res) => {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).send('Method Not Allowed');
+  }
+
   try {
     const { highlightedText, surroundingText } = req.body;
 
@@ -40,14 +45,10 @@ Respond with a single, valid JSON object with one key: "explanation".`;
     const cleanedText = text.replace(/```json\n?|\n?```/g, '');
     const parsedResponse = JSON.parse(cleanedText);
 
-    res.status(200).send(parsedResponse);
+    res.status(200).json(parsedResponse);
 
   } catch (error) {
     console.error('Error generating explanation:', error);
     res.status(500).send('Error generating explanation.');
   }
-});
-
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+};

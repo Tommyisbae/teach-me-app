@@ -20,28 +20,16 @@ The project is divided into two main components:
 
 To run this project, you'll need to have Node.js and npm installed.
 
-### Backend
+## Vercel Deployment
 
-1.  **Navigate to the `backend` directory:**
-    ```bash
-    cd teach_me_app/backend
-    ```
+To deploy the backend to Vercel:
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-
-3.  **Create a `.env` file** in the `backend` directory and add your Gemini API key:
-    ```
-    GEMINI_API_KEY=your_api_key
-    ```
-
-4.  **Start the server:**
-    ```bash
-    node index.js
-    ```
-    The server will be running at `http://localhost:5001`.
+1.  Create a Vercel account at [https://vercel.com](https://vercel.com).
+2.  Install the Vercel CLI: `npm install -g vercel`
+3.  From the `teach_me_app` directory, run `vercel login`.
+4.  Run `vercel` to deploy. Vercel will automatically detect the `api/explain.js` file and deploy it as a serverless function.
+5.  Once deployed, Vercel will give you a URL (e.g., `https://your-project.vercel.app`). You need to update the `content_script.js` file to use this URL for the API endpoint (e.g., `https://your-project.vercel.app/api/explain`).
+6.  You also need to set your `GEMINI_API_KEY` as an environment variable in your Vercel project settings.
 
 ### Frontend (Chrome Extension)
 

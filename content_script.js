@@ -60,7 +60,7 @@ function getSurroundingText(selection) {
 
 async function getExplanation(highlightedText, surroundingText) {
   try {
-    const response = await fetch('http://localhost:5001/explain', {
+    const response = await fetch('https://your-vercel-deployment-url.vercel.app/api/explain', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
