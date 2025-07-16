@@ -5,37 +5,43 @@ document.addEventListener('mouseup', async (e) => {
   if (selectedText) {
     const surroundingText = getSurroundingText(selection);
     
-    // Get the current conversation, add a loading message, and save.
-    chrome.storage.local.get('conversation', async (result) => {
-      const conversation = result.conversation || [];
-      const updatedConversation = [
-        ...conversation,
+    // Clear the selection on the page immediately
+    window.getSelection().removeAllRanges();
+
+    try {
+      // Get the current conversation
+      const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
+      
+      // Add a loading message and save
+      const loadingConversation = [
+        ...currentConversation,
         { role: 'bot', content: `Thinking about "${selectedText}"...` }
       ];
-      chrome.storage.local.set({ conversation: updatedConversation });
+      await chrome.storage.local.set({ conversation: loadingConversation });
 
       // Fetch the explanation
       const explanation = await getExplanation(selectedText, surroundingText);
 
       // Replace the loading message with the actual explanation
-      updatedConversation.pop(); // Remove the "Thinking..." message
+      loadingConversation.pop(); // Remove the "Thinking..." message
       const finalConversation = [
-        ...updatedConversation,
-        { role: 'bot', content: `Here's an explanation of "${selectedText}":\n\n${explanation}` }
+        ...loadingConversation,
+        { role: 'bot', content: explanation }
       ];
 
       // Save the final conversation and the context
-      chrome.storage.local.set({ 
+      await chrome.storage.local.set({ 
         conversation: finalConversation,
-        originalContext: { // We still save the latest context
+        originalContext: {
           highlightedText: selectedText,
           surroundingText: surroundingText
         }
       });
-    });
 
-    // Clear the selection on the page
-    window.getSelection().removeAllRanges();
+    } catch (error) {
+      console.error("Error handling highlight:", error);
+      // Optionally, you could try to revert the conversation to its previous state
+    }
   }
 });
 
@@ -68,7 +74,7 @@ async function getExplanation(highlightedText, surroundingText) {
     const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ highlightedText, surroundingText }), // No chat history needed for the initial explanation
+      body: JSON.stringify({ highlightedText, surroundingText }),
     });
 
     if (!response.ok) {
@@ -83,13 +89,11 @@ async function getExplanation(highlightedText, surroundingText) {
   }
 }
 
-// This listener handles follow-up questions from the popup
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local' && changes.conversation) {
     const newConversation = changes.conversation.newValue;
     const oldConversation = changes.conversation.oldValue || [];
 
-    // Check if the last message was from the user, indicating a follow-up
     if (newConversation.length > oldConversation.length && newConversation[newConversation.length - 1].role === 'user') {
       handleFollowUp(newConversation);
     }
@@ -98,37 +102,33 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 async function handleFollowUp(conversation) {
   try {
-    // Add a "Thinking..." message while waiting for the response
     const thinkingConversation = [...conversation, { role: 'bot', content: 'Thinking...' }];
-    chrome.storage.local.set({ conversation: thinkingConversation });
+    await chrome.storage.local.set({ conversation: thinkingConversation });
 
-    chrome.storage.local.get('originalContext', async (result) => {
-      // Use the full conversation history for context
-      const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // We can send the whole history, the backend will handle it
-          chatHistory: conversation,
-          // Send the original context in case it's useful
-          highlightedText: result.originalContext?.highlightedText || '',
-          surroundingText: result.originalContext?.surroundingText || ''
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
+    const { originalContext } = await chrome.storage.local.get('originalContext');
       
-      // Replace "Thinking..." with the actual response
-      const finalConversation = [...conversation, { role: 'bot', content: data.explanation }];
-      chrome.storage.local.set({ conversation: finalConversation });
+    const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chatHistory: conversation,
+        highlightedText: originalContext?.highlightedText || '',
+        surroundingText: originalContext?.surroundingText || ''
+      }),
     });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    const finalConversation = [...conversation, { role: 'bot', content: data.explanation }];
+    await chrome.storage.local.set({ conversation: finalConversation });
+
   } catch (error) {
     console.error('Error getting follow-up explanation:', error);
-    const finalConversation = [...conversation, { role: 'bot', content: 'Sorry, I encountered an error.' }];
-    chrome.storage.local.set({ conversation: finalConversation });
+    const errorConversation = [...conversation, { role: 'bot', content: 'Sorry, I encountered an error.' }];
+    await chrome.storage.local.set({ conversation: errorConversation });
   }
 }
