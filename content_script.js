@@ -3,19 +3,14 @@ document.addEventListener('mouseup', async (e) => {
   const selectedText = selection.toString().trim();
 
   if (selectedText) {
-    // Let the popup know we are working on it
-    chrome.runtime.sendMessage({ action: 'loading' });
+    // Set a "loading" state in storage so the popup can show it.
+    chrome.storage.local.set({ status: 'loading', lastExplanation: null });
 
     const surroundingText = getSurroundingText(selection);
-
-    // Placeholder for the actual explanation generation
     const explanation = await getExplanation(selectedText, surroundingText);
 
-    // Save the explanation to local storage
-    chrome.storage.local.set({ lastExplanation: explanation });
-
-    // Send a message to the popup if it's open
-    chrome.runtime.sendMessage({ action: 'explanation_ready', explanation: explanation });
+    // Save the final explanation to local storage
+    chrome.storage.local.set({ status: 'ready', lastExplanation: explanation });
 
     // Clear the selection
     window.getSelection().removeAllRanges();
