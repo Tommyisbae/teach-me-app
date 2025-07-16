@@ -6,12 +6,13 @@
 </head>
 <body>
   <div class="container">
-    <h1>Teach Me</h1>
-    <div id="status-message" class="status" style="display: none;">Loading...</div>
     <div id="explanation-container">
-      <p id="explanation">Highlight text on any page to get an explanation.</p>
+      <!-- Chat messages will be dynamically added here -->
     </div>
-    <button id="clear-button" class="action-button">Clear Explanation</button>
+    <div id="input-container">
+      <input type="text" id="chat-input" placeholder="Ask a follow-up question...">
+      <button id="send-button">Send</button>
+    </div>
   </div>
   <script src="popup.js"></script>
 </body>

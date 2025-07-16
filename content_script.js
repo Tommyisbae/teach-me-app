@@ -3,67 +3,66 @@ document.addEventListener('mouseup', async (e) => {
   const selectedText = selection.toString().trim();
 
   if (selectedText) {
-    // Set a "loading" state in storage so the popup can show it.
-    chrome.storage.local.set({ status: 'loading', lastExplanation: null });
+    // Clear previous conversation and set a loading state
+    const loadingConversation = [{ role: 'bot', content: 'Loading...' }];
+    chrome.storage.local.set({ conversation: loadingConversation });
 
     const surroundingText = getSurroundingText(selection);
+    
+    // Fetch the initial explanation
     const explanation = await getExplanation(selectedText, surroundingText);
 
-    // Save the final explanation to local storage
-    chrome.storage.local.set({ status: 'ready', lastExplanation: explanation });
+    // Create the initial conversation history
+    const conversation = [
+      { role: 'bot', content: `Here's an explanation of "${selectedText}":\n\n${explanation}` }
+    ];
 
-    // Clear the selection
+    // Save the full conversation to local storage
+    chrome.storage.local.set({ 
+      conversation: conversation,
+      originalContext: {
+        highlightedText: selectedText,
+        surroundingText: surroundingText
+      }
+    });
+
+    // Clear the selection on the page
     window.getSelection().removeAllRanges();
   }
 });
 
 function getSurroundingText(selection) {
-  if (!selection.anchorNode) {
-    return '';
-  }
+  if (!selection.anchorNode) return '';
 
-  // Strategy 1: Look for PDF.js viewer structure first
   const pageElement = selection.anchorNode.parentElement.closest('.page');
-  if (pageElement) {
-    const textLayer = pageElement.querySelector('.textLayer');
-    if (textLayer) {
-      console.log("Found PDF.js text layer for context.");
-      return textLayer.innerText;
-    }
+  if (pageElement && pageElement.querySelector('.textLayer')) {
+    return pageElement.querySelector('.textLayer').innerText;
   }
 
-  // Strategy 2: Find the closest common block-level ancestor for regular pages
-  console.log("No PDF.js structure found. Searching for common ancestor.");
-  let surroundingText = '';
   if (selection.rangeCount > 0) {
     const range = selection.getRangeAt(0);
     const commonAncestor = range.commonAncestorContainer;
-
     let container = commonAncestor.nodeType === Node.ELEMENT_NODE ? commonAncestor : commonAncestor.parentElement;
     while (container) {
       const style = window.getComputedStyle(container);
-      if (style.display === 'block' || container.tagName === 'P' || container.tagName === 'DIV' || container.tagName === 'ARTICLE' || container.tagName === 'SECTION') {
-        surroundingText = container.innerText;
-        break;
+      if (style.display === 'block' || ['P', 'DIV', 'ARTICLE', 'SECTION'].includes(container.tagName)) {
+        return container.innerText;
       }
       container = container.parentElement;
     }
   }
   
-  return surroundingText;
+  return '';
 }
 
 async function getExplanation(highlightedText, surroundingText) {
+  // This function now just fetches the initial explanation.
+  // The popup will handle subsequent chat messages.
   try {
     const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        highlightedText,
-        surroundingText,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ highlightedText, surroundingText }),
     });
 
     if (!response.ok) {
@@ -73,7 +72,52 @@ async function getExplanation(highlightedText, surroundingText) {
     const data = await response.json();
     return data.explanation;
   } catch (error) {
-    console.error('Error getting explanation:', error);
+    console.error('Error getting initial explanation:', error);
     return 'Sorry, I was unable to get an explanation for that.';
+  }
+}
+
+// This listener handles follow-up questions from the popup
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.conversation) {
+    const newConversation = changes.conversation.newValue;
+    const oldConversation = changes.conversation.oldValue || [];
+
+    // Check if the last message was from the user
+    if (newConversation.length > oldConversation.length && newConversation[newConversation.length - 1].role === 'user') {
+      handleFollowUp(newConversation);
+    }
+  }
+});
+
+async function handleFollowUp(conversation) {
+  try {
+    chrome.storage.local.get('originalContext', async (result) => {
+      const { highlightedText, surroundingText } = result.originalContext;
+      
+      const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          highlightedText,
+          surroundingText,
+          chatHistory: conversation,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Add the bot's response to the conversation
+      const updatedConversation = [...conversation, { role: 'bot', content: data.explanation }];
+      chrome.storage.local.set({ conversation: updatedConversation });
+    });
+  } catch (error) {
+    console.error('Error getting follow-up explanation:', error);
+    const updatedConversation = [...conversation, { role: 'bot', content: 'Sorry, I encountered an error.' }];
+    chrome.storage.local.set({ conversation: updatedConversation });
   }
 }
