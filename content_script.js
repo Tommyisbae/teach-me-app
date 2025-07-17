@@ -1,49 +1,63 @@
-document.addEventListener('mouseup', async (e) => {
-  const selection = window.getSelection();
-  const selectedText = selection.toString().trim();
-
-  if (selectedText) {
-    const surroundingText = getSurroundingText(selection);
-    
-    // Clear the selection on the page immediately
-    window.getSelection().removeAllRanges();
-
-    try {
-      // Get the current conversation
-      const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
-      
-      // Add a loading message and save
-      const loadingConversation = [
-        ...currentConversation,
-        { role: 'bot', content: `Thinking about "${selectedText}"...` }
-      ];
-      await chrome.storage.local.set({ conversation: loadingConversation });
-
-      // Fetch the explanation
-      const explanation = await getExplanation(selectedText, surroundingText);
-
-      // Replace the loading message with the actual explanation
-      loadingConversation.pop(); // Remove the "Thinking..." message
-      const finalConversation = [
-        ...loadingConversation,
-        { role: 'bot', content: explanation }
-      ];
-
-      // Save the final conversation and the context
-      await chrome.storage.local.set({ 
-        conversation: finalConversation,
-        originalContext: {
-          highlightedText: selectedText,
-          surroundingText: surroundingText
-        }
-      });
-
-    } catch (error) {
-      console.error("Error handling highlight:", error);
-      // Optionally, you could try to revert the conversation to its previous state
-    }
+// Listen for a message from the background script to start the explanation
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === "EXPLAIN_TEXT") {
+    handleHighlight(request.text);
+    // Indicate that we will respond asynchronously
+    return true;
   }
 });
+
+async function handleHighlight(selectedText) {
+  if (!selectedText) return;
+
+  const selection = window.getSelection();
+  const surroundingText = getSurroundingText(selection);
+
+  try {
+    // Get the current conversation to append to it
+    const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
+    
+    // Add a "Thinking..." message to show work is in progress
+    const loadingConversation = [
+      ...currentConversation,
+      { role: 'bot', content: `Thinking about "${selectedText}"...` }
+    ];
+    await chrome.storage.local.set({ conversation: loadingConversation });
+
+    // Fetch the explanation. A new highlight does not send chat history.
+    const explanation = await getExplanation(selectedText, surroundingText);
+
+    // Replace the "Thinking..." message with the real explanation
+    loadingConversation.pop(); 
+    const finalConversation = [
+      ...loadingConversation,
+      { role: 'bot', content: explanation }
+    ];
+
+    // Save the final conversation and set the new context for potential follow-ups
+    await chrome.storage.local.set({ 
+      conversation: finalConversation,
+      originalContext: {
+        highlightedText: selectedText,
+        surroundingText: surroundingText
+      }
+    });
+
+  } catch (error) {
+    console.error("Error handling highlight:", error);
+    // Attempt to recover by replacing the "Thinking..." message with an error
+    const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
+    if (currentConversation.length > 0) {
+      currentConversation.pop(); // Remove "Thinking..."
+    }
+    const errorConversation = [
+        ...currentConversation,
+        { role: 'bot', content: 'Sorry, an error occurred while getting the explanation.' }
+    ];
+    await chrome.storage.local.set({ conversation: errorConversation });
+  }
+}
+
 
 function getSurroundingText(selection) {
   if (!selection.anchorNode) return '';

@@ -5,11 +5,15 @@
   "description": "Highlight a concept you're not familiar with, and I'll explain it to you.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "contextMenus"
   ],
   "host_permissions": [
     "http://localhost:5001/"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
