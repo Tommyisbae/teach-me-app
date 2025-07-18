@@ -84,22 +84,29 @@ function getSurroundingText(selection) {
 }
 
 async function getExplanation(highlightedText, surroundingText) {
-  try {
-    const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ highlightedText, surroundingText }),
-    });
+  let retries = 2; // Attempt the fetch a total of 2 times
+  while (retries > 0) {
+    try {
+      const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ highlightedText, surroundingText }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.explanation;
+    } catch (error) {
+      retries--;
+      if (retries === 0) {
+        console.error('Error getting initial explanation after multiple retries:', error);
+        return 'Sorry, I was unable to get an explanation for that.';
+      }
+      console.warn('Retrying initial explanation fetch...', error);
     }
-
-    const data = await response.json();
-    return data.explanation;
-  } catch (error) {
-    console.error('Error getting initial explanation:', error);
-    return 'Sorry, I was unable to get an explanation for that.';
   }
 }
 
@@ -120,29 +127,48 @@ async function handleFollowUp(conversation) {
     await chrome.storage.local.set({ conversation: thinkingConversation });
 
     const { originalContext } = await chrome.storage.local.get('originalContext');
-      
-    const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chatHistory: conversation,
-        highlightedText: originalContext?.highlightedText || '',
-        surroundingText: originalContext?.surroundingText || ''
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
     
-    const finalConversation = [...conversation, { role: 'bot', content: data.explanation }];
+    let explanation;
+    let retries = 2; // Attempt a total of 2 times
+    while(retries > 0) {
+        try {
+            const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chatHistory: conversation,
+                highlightedText: originalContext?.highlightedText || '',
+                surroundingText: originalContext?.surroundingText || ''
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            explanation = data.explanation;
+            break; // Success, exit loop
+        } catch (error) {
+            retries--;
+            if (retries === 0) {
+                throw error; // Rethrow to be caught by the outer catch block
+            }
+            console.warn('Retrying follow-up fetch...', error);
+        }
+    }
+    
+    const finalConversation = [...conversation, { role: 'bot', content: explanation }];
     await chrome.storage.local.set({ conversation: finalConversation });
 
   } catch (error) {
     console.error('Error getting follow-up explanation:', error);
-    const errorConversation = [...conversation, { role: 'bot', content: 'Sorry, I encountered an error.' }];
+    // Safely update the conversation with an error message
+    const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
+    if (currentConversation.length > 0) {
+      currentConversation.pop(); // Remove "Thinking..."
+    }
+    const errorConversation = [...currentConversation, { role: 'bot', content: 'Sorry, I encountered an error.' }];
     await chrome.storage.local.set({ conversation: errorConversation });
   }
 }

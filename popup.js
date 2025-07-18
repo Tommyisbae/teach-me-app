@@ -58,7 +58,9 @@ document.addEventListener('DOMContentLoaded', () => {
     conversation.forEach(message => {
       const messageDiv = document.createElement('div');
       messageDiv.classList.add('message', message.role);
-      messageDiv.textContent = message.content;
+      // Replace **text** with <strong>text</strong> for basic markdown bolding
+      const formattedContent = message.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      messageDiv.innerHTML = formattedContent; // Use innerHTML to render the bold tags
       explanationContainer.appendChild(messageDiv);
     });
 
