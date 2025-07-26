@@ -28,14 +28,51 @@ module.exports = async (req, res) => {
     let prompt;
     if (chatHistory && chatHistory.length > 0) {
       // This is a follow-up question
-      const historyString = chatHistory.map(m => `${m.role}: ${m.content}`).join('\n');
-      prompt = `You are Teach Me, an expert educator AI, continuing a conversation with a user. They are asking a follow-up question.\n\n**Original Topic:**\n- **User's Highlight:** "${highlightedText}"\n${surroundingText ? `- **Surrounding Text:**\n"""\n${surroundingText}\n"""` : ''}\n\n**Full Conversation History (for context):**\n${historyString}\n\n**Your Mission:**\n1.  **Analyze the Latest Question:** Understand the user's latest message in the context of the entire conversation.\n2.  **Provide a Helpful Answer:** Give a concise, clear, and helpful response that directly addresses their question.\n3.  **Maintain Context:** Refer back to the original topic or previous parts of the conversation if it helps clarify your point. Do not repeat yourself unless necessary.\n4.  **Be Conversational:** Keep the tone friendly, encouraging, and helpful.\n\n**Output Format:**\nRespond with a single, valid JSON object with one key: "explanation". The explanation should be a string.`;
+      prompt = {
+        role: "You are Teach Me, an expert educator AI, continuing a conversation.",
+        task: "The user is asking a follow-up question.",
+        context: {
+          original_topic: {
+            highlighted_text: highlightedText,
+            surrounding_text: surroundingText || "Not provided."
+          },
+          conversation_history: chatHistory
+        },
+        mission: [
+          "Analyze the latest question in the context of the entire conversation.",
+          "Provide a concise, clear, and helpful response that directly addresses the question.",
+          "Maintain context by referring to the original topic or previous parts of the conversation if helpful.",
+          "Keep the tone friendly, encouraging, and helpful."
+        ],
+        output_format: {
+          type: "JSON",
+          schema: { "explanation": "string" }
+        }
+      };
     } else {
       // This is the first explanation
-      prompt = `You are Teach Me, an expert educator AI. Your specialty is breaking down complex concepts into simple, easy-to-understand explanations. A user has highlighted something they want to understand better.\n\n**User's Highlight:**\n"${highlightedText}"\n\n${surroundingText ? `**Surrounding Context from the Page:**\n"""\n${surroundingText}\n"""` : ''}\n\n**Your Mission:**\n1.  **Analyze:** Carefully examine the highlighted text and its surrounding context to grasp the core concept.\n2.  **Explain Simply:** Provide a clear and concise explanation. Assume you're teaching a curious beginner. Use analogies, real-world examples, or simple metaphors to make the idea click.\n3.  **Define Key Terms:** Bold any key terms within your explanation for emphasis.\n4.  **Structure:** Keep your explanation focused and to the point.\n\n**Output Format:**\nRespond with a single, valid JSON object with one key: "explanation". The explanation should be a string.`;
+      prompt = {
+        role: "You are Teach Me, an expert educator AI specializing in breaking down complex concepts.",
+        task: "A user has highlighted text they want to understand.",
+        input: {
+          highlighted_text: highlightedText,
+          surrounding_context: surroundingText || "Not provided."
+        },
+        mission: [
+          "Analyze the highlighted text and its context to grasp the core concept.",
+          "Provide a clear and concise explanation, assuming a beginner audience.",
+          "Use analogies, real-world examples, or simple metaphors.",
+          "Bold any key terms within your explanation for emphasis.",
+          "Keep the explanation focused and to the point."
+        ],
+        output_format: {
+          type: "JSON",
+          schema: { "explanation": "string" }
+        }
+      };
     }
 
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent(JSON.stringify(prompt));
     const response = await result.response;
     const text = response.text();
     const cleanedText = text.replace(/```json\n?|\n?```/g, '');
