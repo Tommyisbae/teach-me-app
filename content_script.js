@@ -1,174 +1,179 @@
-// Listen for a message from the background script to start the explanation
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === "EXPLAIN_TEXT") {
-    handleHighlight(request.text);
-    // Indicate that we will respond asynchronously
-    return true;
-  }
-});
+// Use a global flag to prevent multiple listeners from being attached
+if (!window.teachMeScriptLoaded) {
+  window.teachMeScriptLoaded = true;
 
-async function handleHighlight(selectedText) {
-  if (!selectedText) return;
-
-  const selection = window.getSelection();
-  const surroundingText = getSurroundingText(selection);
-
-  try {
-    // Get the current conversation to append to it
-    const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
-    
-    // Add a "Thinking..." message to show work is in progress
-    const loadingConversation = [
-      ...currentConversation,
-      { role: 'bot', content: `Thinking about "${selectedText}"...` }
-    ];
-    await chrome.storage.local.set({ conversation: loadingConversation });
-
-    // Fetch the explanation. A new highlight does not send chat history.
-    const explanation = await getExplanation(selectedText, surroundingText);
-
-    // Replace the "Thinking..." message with the real explanation
-    loadingConversation.pop(); 
-    const finalConversation = [
-      ...loadingConversation,
-      { role: 'bot', content: explanation }
-    ];
-
-    // Save the final conversation and set the new context for potential follow-ups
-    await chrome.storage.local.set({ 
-      conversation: finalConversation,
-      originalContext: {
-        highlightedText: selectedText,
-        surroundingText: surroundingText
-      }
-    });
-
-  } catch (error) {
-    console.error("Error handling highlight:", error);
-    // Attempt to recover by replacing the "Thinking..." message with an error
-    const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
-    if (currentConversation.length > 0) {
-      currentConversation.pop(); // Remove "Thinking..."
+  // Listen for a message from the background script to start the explanation
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === "EXPLAIN_TEXT") {
+      handleHighlight(request.text);
+      // Indicate that we will respond asynchronously
+      return true;
     }
-    const errorConversation = [
-        ...currentConversation,
-        { role: 'bot', content: 'Sorry, an error occurred while getting the explanation.' }
-    ];
-    await chrome.storage.local.set({ conversation: errorConversation });
-  }
-}
+  });
 
+  async function handleHighlight(selectedText) {
+    if (!selectedText) return;
 
-function getSurroundingText(selection) {
-  if (!selection.anchorNode) return '';
+    const selection = window.getSelection();
+    const surroundingText = getSurroundingText(selection);
 
-  const pageElement = selection.anchorNode.parentElement.closest('.page');
-  if (pageElement && pageElement.querySelector('.textLayer')) {
-    return pageElement.querySelector('.textLayer').innerText;
-  }
-
-  if (selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    const commonAncestor = range.commonAncestorContainer;
-    let container = commonAncestor.nodeType === Node.ELEMENT_NODE ? commonAncestor : commonAncestor.parentElement;
-    while (container) {
-      const style = window.getComputedStyle(container);
-      if (style.display === 'block' || ['P', 'DIV', 'ARTICLE', 'SECTION'].includes(container.tagName)) {
-        return container.innerText;
-      }
-      container = container.parentElement;
-    }
-  }
-  
-  return '';
-}
-
-async function getExplanation(highlightedText, surroundingText) {
-  let retries = 2; // Attempt the fetch a total of 2 times
-  while (retries > 0) {
     try {
-      const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ highlightedText, surroundingText }),
+      // Get the current conversation to append to it
+      const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
+      
+      // Add a "Thinking..." message to show work is in progress
+      const loadingConversation = [
+        ...currentConversation,
+        { role: 'bot', content: `Thinking about "${selectedText}"...` }
+      ];
+      await chrome.storage.local.set({ conversation: loadingConversation });
+
+      // Fetch the explanation. A new highlight does not send chat history.
+      const explanation = await getExplanation(selectedText, surroundingText);
+
+      // Replace the "Thinking..." message with the real explanation
+      loadingConversation.pop(); 
+      const finalConversation = [
+        ...loadingConversation,
+        { role: 'bot', content: explanation }
+      ];
+
+      // Save the final conversation and set the new context for potential follow-ups
+      await chrome.storage.local.set({ 
+        conversation: finalConversation,
+        originalContext: {
+          highlightedText: selectedText,
+          surroundingText: surroundingText
+        }
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.explanation;
     } catch (error) {
-      retries--;
-      if (retries === 0) {
-        console.error('Error getting initial explanation after multiple retries:', error);
-        return 'Sorry, I was unable to get an explanation for that.';
+      console.error("Error handling highlight:", error);
+      // Attempt to recover by replacing the "Thinking..." message with an error
+      const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
+      if (currentConversation.length > 0) {
+        currentConversation.pop(); // Remove "Thinking..."
       }
-      console.warn('Retrying initial explanation fetch...', error);
+      const errorConversation = [
+          ...currentConversation,
+          { role: 'bot', content: 'Sorry, an error occurred while getting the explanation.' }
+      ];
+      await chrome.storage.local.set({ conversation: errorConversation });
     }
   }
-}
 
-chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'local' && changes.conversation) {
-    const newConversation = changes.conversation.newValue;
-    const oldConversation = changes.conversation.oldValue || [];
 
-    if (newConversation.length > oldConversation.length && newConversation[newConversation.length - 1].role === 'user') {
-      handleFollowUp(newConversation);
+  function getSurroundingText(selection) {
+    if (!selection.anchorNode) return '';
+
+    const pageElement = selection.anchorNode.parentElement.closest('.page');
+    if (pageElement && pageElement.querySelector('.textLayer')) {
+      return pageElement.querySelector('.textLayer').innerText;
     }
-  }
-});
 
-async function handleFollowUp(conversation) {
-  try {
-    const thinkingConversation = [...conversation, { role: 'bot', content: 'Thinking...' }];
-    await chrome.storage.local.set({ conversation: thinkingConversation });
-
-    const { originalContext } = await chrome.storage.local.get('originalContext');
-    
-    let explanation;
-    let retries = 2; // Attempt a total of 2 times
-    while(retries > 0) {
-        try {
-            const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chatHistory: conversation,
-                highlightedText: originalContext?.highlightedText || '',
-                surroundingText: originalContext?.surroundingText || ''
-              }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            explanation = data.explanation;
-            break; // Success, exit loop
-        } catch (error) {
-            retries--;
-            if (retries === 0) {
-                throw error; // Rethrow to be caught by the outer catch block
-            }
-            console.warn('Retrying follow-up fetch...', error);
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const commonAncestor = range.commonAncestorContainer;
+      let container = commonAncestor.nodeType === Node.ELEMENT_NODE ? commonAncestor : commonAncestor.parentElement;
+      while (container) {
+        const style = window.getComputedStyle(container);
+        if (style.display === 'block' || ['P', 'DIV', 'ARTICLE', 'SECTION'].includes(container.tagName)) {
+          return container.innerText;
         }
+        container = container.parentElement;
+      }
     }
     
-    const finalConversation = [...conversation, { role: 'bot', content: explanation }];
-    await chrome.storage.local.set({ conversation: finalConversation });
+    return '';
+  }
 
-  } catch (error) {
-    console.error('Error getting follow-up explanation:', error);
-    // Safely update the conversation with an error message
-    const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
-    if (currentConversation.length > 0) {
-      currentConversation.pop(); // Remove "Thinking..."
+  async function getExplanation(highlightedText, surroundingText) {
+    let retries = 2; // Attempt the fetch a total of 2 times
+    while (retries > 0) {
+      try {
+        const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ highlightedText, surroundingText }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.explanation;
+      } catch (error) {
+        retries--;
+        if (retries === 0) {
+          console.error('Error getting initial explanation after multiple retries:', error);
+          return 'Sorry, I was unable to get an explanation for that.';
+        }
+        console.warn('Retrying initial explanation fetch...', error);
+      }
     }
-    const errorConversation = [...currentConversation, { role: 'bot', content: 'Sorry, I encountered an error.' }];
-    await chrome.storage.local.set({ conversation: errorConversation });
+  }
+
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.conversation) {
+      const newConversation = changes.conversation.newValue;
+      const oldConversation = changes.conversation.oldValue || [];
+
+      if (newConversation.length > oldConversation.length && newConversation[newConversation.length - 1].role === 'user') {
+        handleFollowUp(newConversation);
+      }
+    }
+  });
+
+  async function handleFollowUp(conversation) {
+    try {
+      const thinkingConversation = [...conversation, { role: 'bot', content: 'Thinking...' }];
+      await chrome.storage.local.set({ conversation: thinkingConversation });
+
+      const { originalContext } = await chrome.storage.local.get('originalContext');
+      
+      let explanation;
+      let retries = 2; // Attempt a total of 2 times
+      while(retries > 0) {
+          try {
+              const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chatHistory: conversation,
+                  highlightedText: originalContext?.highlightedText || '',
+                  surroundingText: originalContext?.surroundingText || ''
+                }),
+              });
+
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+
+              const data = await response.json();
+              explanation = data.explanation;
+              break; // Success, exit loop
+          } catch (error) {
+              retries--;
+              if (retries === 0) {
+                  throw error; // Rethrow to be caught by the outer catch block
+              }
+              console.warn('Retrying follow-up fetch...', error);
+          }
+      }
+      
+      const finalConversation = [...conversation, { role: 'bot', content: explanation }];
+      await chrome.storage.local.set({ conversation: finalConversation });
+
+    } catch (error) {
+      console.error('Error getting follow-up explanation:', error);
+      // Safely update the conversation with an error message
+      const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
+      if (currentConversation.length > 0) {
+        currentConversation.pop(); // Remove "Thinking..."
+      }
+      const errorConversation = [...currentConversation, { role: 'bot', content: 'Sorry, I encountered an error.' }];
+      await chrome.storage.local.set({ conversation: errorConversation });
+    }
   }
 }
