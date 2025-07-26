@@ -60,8 +60,7 @@ module.exports = async (req, res) => {
         },
         mission: [
           "Analyze the highlighted text and its context to grasp the core concept.",
-          "Provide a clear and concise explanation, assuming a beginner audience.",
-          "Use analogies, real-world examples, or simple metaphors.",
+          "Provide a clear, direct, and concise explanation, assuming a beginner audience.",
           "Bold any key terms within your explanation for emphasis.",
           "Keep the explanation focused and to the point."
         ],
