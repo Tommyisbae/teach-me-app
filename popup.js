@@ -30,22 +30,77 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function handleSendMessage() {
+  async function handleSendMessage() {
     const messageText = chatInput.value.trim();
-    if (messageText) {
-      chrome.storage.local.get('conversation', (result) => {
-        const conversation = result.conversation || [];
-        const updatedConversation = [...conversation, { role: 'user', content: messageText }];
-        chrome.storage.local.set({ conversation: updatedConversation });
-      });
-      chatInput.value = '';
+    if (!messageText) return;
+
+    chatInput.value = '';
+    chatInput.disabled = true;
+    sendButton.disabled = true;
+
+    // Get the state at the beginning
+    const { conversation: currentConversation = [], originalContext } = await chrome.storage.local.get(['conversation', 'originalContext']);
+    const conversationWithUserMsg = [...currentConversation, { role: 'user', content: messageText }];
+
+    try {
+      // Add "Thinking..." message and update storage/UI
+      const thinkingConversation = [...conversationWithUserMsg, { role: 'bot', content: 'Thinking...' }];
+      await chrome.storage.local.set({ conversation: thinkingConversation });
+
+      // Make the API call
+      const explanation = await getFollowUpExplanation(conversationWithUserMsg, originalContext);
+
+      // Replace "Thinking..." with the actual response
+      const finalConversation = [...conversationWithUserMsg, { role: 'bot', content: explanation }];
+      await chrome.storage.local.set({ conversation: finalConversation });
+
+    } catch (error) {
+      console.error('Error getting follow-up explanation:', error);
+      // Replace "Thinking..." with an error message
+      const errorConversation = [...conversationWithUserMsg, { role: 'bot', content: 'Sorry, I encountered an error.' }];
+      await chrome.storage.local.set({ conversation: errorConversation });
+    } finally {
+      // Re-enable input
+      chatInput.disabled = false;
+      sendButton.disabled = false;
+      chatInput.focus();
     }
   }
 
-  function loadConversation() {
-    chrome.storage.local.get('conversation', (result) => {
-      renderConversation(result.conversation);
-    });
+  async function getFollowUpExplanation(chatHistory, originalContext) {
+    let retries = 2; // Attempt a total of 2 times
+    while (retries > 0) {
+      try {
+        const response = await fetch('https://teach-me-app-sigma.vercel.app/api/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatHistory: chatHistory,
+            highlightedText: originalContext?.highlightedText || '',
+            surroundingText: originalContext?.surroundingText || ''
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.explanation;
+      } catch (error) {
+        retries--;
+        if (retries === 0) {
+          console.error('Error getting follow-up explanation after multiple retries:', error);
+          throw error; // Rethrow to be caught by handleSendMessage
+        }
+        console.warn('Retrying follow-up fetch...', error);
+      }
+    }
+  }
+
+  async function loadConversation() {
+    const { conversation } = await chrome.storage.local.get('conversation');
+    renderConversation(conversation);
   }
 
   function renderConversation(conversation) {
@@ -67,4 +122,3 @@ document.addEventListener('DOMContentLoaded', () => {
     explanationContainer.scrollTop = explanationContainer.scrollHeight;
   }
 });
-
