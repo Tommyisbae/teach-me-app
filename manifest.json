@@ -9,7 +9,7 @@
     "contextMenus"
   ],
   "host_permissions": [
-    "http://localhost:5001/"
+    "https://teach-me-app-sigma.vercel.app/"
   ],
   "background": {
     "service_worker": "background.js"
@@ -36,5 +36,14 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "commands": {
+    "explain-selection": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Explain selected text with Teach Me"
+    }
   }
 }

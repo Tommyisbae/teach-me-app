@@ -19,3 +19,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     });
   }
 });
+
+// Listen for keyboard shortcut (Ctrl+Shift+E)
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "explain-selection") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: "GET_SELECTION_AND_EXPLAIN"
+        });
+      }
+    });
+  }
+});

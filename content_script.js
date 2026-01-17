@@ -6,9 +6,15 @@ if (!window.teachMeScriptLoaded) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "EXPLAIN_TEXT") {
       handleHighlight(request.text);
-      // Indicate that we will respond asynchronously
-      return true;
     }
+    // Handle keyboard shortcut - get selection from within content script
+    if (request.type === "GET_SELECTION_AND_EXPLAIN") {
+      const selectedText = window.getSelection().toString();
+      if (selectedText) {
+        handleHighlight(selectedText);
+      }
+    }
+    // No async response needed, so don't return true
   });
 
   async function handleHighlight(selectedText) {
@@ -20,7 +26,7 @@ if (!window.teachMeScriptLoaded) {
     try {
       // Get the current conversation to append to it
       const { conversation: currentConversation = [] } = await chrome.storage.local.get('conversation');
-      
+
       // Add a "Thinking..." message to show work is in progress
       const loadingConversation = [
         ...currentConversation,
@@ -32,14 +38,14 @@ if (!window.teachMeScriptLoaded) {
       const explanation = await getExplanation(selectedText, surroundingText);
 
       // Replace the "Thinking..." message with the real explanation
-      loadingConversation.pop(); 
+      loadingConversation.pop();
       const finalConversation = [
         ...loadingConversation,
         { role: 'bot', content: explanation }
       ];
 
       // Save the final conversation and set the new context for potential follow-ups
-      await chrome.storage.local.set({ 
+      await chrome.storage.local.set({
         conversation: finalConversation,
         originalContext: {
           highlightedText: selectedText,
@@ -55,8 +61,8 @@ if (!window.teachMeScriptLoaded) {
         currentConversation.pop(); // Remove "Thinking..."
       }
       const errorConversation = [
-          ...currentConversation,
-          { role: 'bot', content: 'Sorry, an error occurred while getting the explanation.' }
+        ...currentConversation,
+        { role: 'bot', content: 'Sorry, an error occurred while getting the explanation.' }
       ];
       await chrome.storage.local.set({ conversation: errorConversation });
     }
@@ -83,7 +89,7 @@ if (!window.teachMeScriptLoaded) {
         container = container.parentElement;
       }
     }
-    
+
     return '';
   }
 
@@ -114,5 +120,5 @@ if (!window.teachMeScriptLoaded) {
     }
   }
 
-  
+
 }

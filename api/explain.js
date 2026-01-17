@@ -74,13 +74,24 @@ module.exports = async (req, res) => {
     const result = await model.generateContent(JSON.stringify(prompt));
     const response = await result.response;
     const text = response.text();
-    const cleanedText = text.replace(/```json\n?|\n?```/g, '');
-    const parsedResponse = JSON.parse(cleanedText);
+
+    // Try to parse as JSON, with fallback for plain text responses
+    let parsedResponse;
+    try {
+      const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+      parsedResponse = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('JSON parse error, using raw text:', parseError.message);
+      console.error('Raw response was:', text);
+      // If Gemini didn't return valid JSON, wrap the raw text
+      parsedResponse = { explanation: text.replace(/```json\n?|\n?```/g, '').trim() };
+    }
 
     res.status(200).json(parsedResponse);
 
   } catch (error) {
-    console.error('Error generating explanation:', error);
-    res.status(500).send('Error generating explanation.');
+    console.error('Error generating explanation:', error.message);
+    console.error('Full error:', error);
+    res.status(500).json({ error: error.message || 'Error generating explanation' });
   }
 };
